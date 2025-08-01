@@ -24,7 +24,7 @@ init(autoreset=True)
 
 # --- Constants & Data Stores ---
 PRODUCTS_FILE = "products.json"
-products_db: Dict[int, dict] = {} # Key: product_id, Value: product dict
+products_db: Dict[int, dict] = {}
 
 # --- Pydantic Models ---
 class Product(BaseModel):
@@ -38,6 +38,8 @@ class Product(BaseModel):
             raise ValueError("Price must be a finite number")
         return self
 
+# This model is no longer used for the POST endpoint, but we can keep it
+# for documentation or other potential endpoints if needed.
 class CartItem(BaseModel):
     product_id: int = Field(..., gt=0)
     quantity: int = Field(..., gt=0)
@@ -76,7 +78,6 @@ def load_products_data() -> None:
 # --- FastAPI App Initialization ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     print(f"{Fore.MAGENTA}--- API Startup: Loading data ---{Style.RESET_ALL}")
     try:
         load_products_data()
@@ -86,7 +87,6 @@ async def lifespan(app: FastAPI):
         print(f"{Fore.RED}FATAL: Startup failed due to missing file: {e}{Style.RESET_ALL}")
         raise RuntimeError("Application cannot start without products file.")
     finally:
-        # Shutdown
         print(f"{Fore.MAGENTA}--- API Shutdown ---{Style.RESET_ALL}")
 
 app = FastAPI(
@@ -111,19 +111,22 @@ async def get_products():
 @app.post(
     "/cart/add",
     status_code=status.HTTP_200_OK,
-    summary="Add or update a product in the cart",
-    description="Adds a specified quantity of a product to the shopping cart.",
+    summary="Add a product to the cart (using query parameters)",
+    description="Adds a specified quantity of a product to the shopping cart via query parameters.",
     response_model=CartOperationResponse 
 )
-async def add_to_cart_endpoint(item: CartItem):
+async def add_to_cart_endpoint(
+    product_id: int = Query(..., description="ID of the product to add", gt=0),
+    quantity: int = Query(1, description="Quantity to add", gt=0)
+):
     try:
-        cart_data = add_to_cart(item.product_id, item.quantity, products_db)
-        action = "updated" if cart_data['quantity'] > item.quantity else "added"
-        print(f"{Fore.GREEN}INFO: {action.capitalize()} {item.quantity} of product ID {item.product_id} to cart. "
+        cart_data = add_to_cart(product_id, quantity, products_db)
+        action = "updated" if cart_data['quantity'] > quantity else "added"
+        print(f"{Fore.GREEN}INFO: {action.capitalize()} {quantity} of product ID {product_id} to cart. "
               f"Now has {cart_data['quantity']} items. Current cart has {len(cart_db)} products.{Style.RESET_ALL}")
 
         return CartOperationResponse(
-            message=f"Product {item.product_id} {action} to cart",
+            message=f"Product {product_id} {action} to cart",
             action=action,
             current_quantity=cart_data['quantity'],
             product_id=cart_data['product_id'],
@@ -135,7 +138,6 @@ async def add_to_cart_endpoint(item: CartItem):
     except Exception as e:
         print(f"{Fore.RED}ERROR: An unexpected error occurred: {e}{Style.RESET_ALL}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {e}")
-
 
 @app.get(
     "/cart/",
@@ -176,7 +178,6 @@ async def checkout():
     
     print(f"{Fore.CYAN}INFO: Cart checked out. Total cost: ${total_cost:.2f}. Cart has been cleared.{Style.RESET_ALL}")
     return CheckoutResponse(total_cost=total_cost, items=detailed_items)
-
 
 @app.delete(
     "/cart/", 
