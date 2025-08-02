@@ -11,7 +11,6 @@ import uuid
 init(autoreset=True)
 
 # --- In-Memory Data Store ---
-# Using a dictionary for O(1) access by ID
 contacts_db: Dict[int, Dict] = {}
 next_id = 0
 
@@ -20,6 +19,7 @@ class ContactBase(BaseModel):
     """Base model for creating or updating a contact."""
     name: str = Field(..., min_length=1, description="Full name of the contact")
     email: EmailStr = Field(..., description="Email address of the contact")
+    phone: str = Field(..., pattern=r"^\+?[0-9\s-]{7,20}$", description="Phone number of the contact")
 
 class Contact(ContactBase):
     """Full model for a contact, including its unique ID."""
@@ -63,6 +63,15 @@ async def create_contact(contact: ContactBase):
     return new_contact_data
 
 @app.get(
+    "/contacts/",
+    response_model=List[Contact],
+    summary="Retrieve all contacts",
+    description="Returns a list of all contacts in the database."
+)
+async def get_all_contacts():
+    return list(contacts_db.values())
+
+@app.get(
     "/contacts/{contact_id}",
     response_model=Contact,
     summary="Retrieve a specific contact",
@@ -81,22 +90,22 @@ async def get_contact(contact_id: int):
 @app.get(
     "/contacts/search/",
     response_model=List[Contact],
-    summary="Search for contacts by name",
-    description="Searches for contacts whose names contain the specified query string."
+    summary="Search for contacts by name or phone",
+    description="Searches for contacts whose names or phone numbers contain the specified query string."
 )
-async def search_contacts(name: str = Query(..., description="Name to search for")):
+async def search_contacts(query: str = Query(..., description="Query string to search for")):
     search_results = [
         contact for contact in contacts_db.values() 
-        if name.lower() in contact['name'].lower()
+        if query.lower() in contact['name'].lower() or query in contact['phone']
     ]
-    print(f"{Fore.BLUE}INFO: Search for '{name}' returned {len(search_results)} results.{Style.RESET_ALL}")
+    print(f"{Fore.BLUE}INFO: Search for '{query}' returned {len(search_results)} results.{Style.RESET_ALL}")
     return search_results
 
 @app.put(
     "/contacts/{contact_id}",
     response_model=Contact,
     summary="Update an existing contact",
-    description="Updates the name and/or email of a contact by its ID."
+    description="Updates the name, email, and/or phone number of a contact by its ID."
 )
 async def update_contact(contact_id: int, contact_update: ContactBase):
     contact = contacts_db.get(contact_id)
