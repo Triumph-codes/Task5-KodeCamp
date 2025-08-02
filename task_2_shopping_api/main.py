@@ -16,7 +16,7 @@ from cart import (
     add_to_cart, 
     checkout_cart, 
     clear_cart,
-    cart_db
+    get_cart
 )
 
 # Initialize colorama
@@ -56,38 +56,74 @@ class CheckoutResponse(BaseModel):
     items: List[Dict[str, Any]]
 
 # --- Utility Functions ---
-def load_products_data() -> None:
-    """Loads product data from a JSON file."""
+def load_products_data():
+    """Load and validate products database"""
     global products_db
-    if not os.path.exists(PRODUCTS_FILE):
-        print(f"{Fore.RED}ERROR: Products file '{PRODUCTS_FILE}' not found. {Style.RESET_ALL}")
-        raise FileNotFoundError("Products file is missing.")
     try:
-        with open(PRODUCTS_FILE, "r") as f:
-            product_list = json.load(f)
-            products_db = {p['id']: Product(**p).model_dump() for p in product_list}
-        print(f"{Fore.GREEN}INFO: Successfully loaded {len(products_db)} products from {PRODUCTS_FILE}{Style.RESET_ALL}")
-    except (json.JSONDecodeError, IOError) as e:
-        print(f"{Fore.RED}ERROR: Could not load products from {PRODUCTS_FILE}: {e}{Style.RESET_ALL}")
+        if not os.path.exists(PRODUCTS_FILE):
+            raise FileNotFoundError(f"Missing products file: {PRODUCTS_FILE}")
+            
+        with open(PRODUCTS_FILE) as f:
+            raw_data = json.load(f)
+            
+        # Validate basic structure
+        if not isinstance(raw_data, list):
+            raise ValueError("Products data must be a list")
+            
+        # Process and validate each product
         products_db = {}
+        for idx, item in enumerate(raw_data):
+            try:
+                product = Product(**item)
+                products_db[product.id] = product.model_dump()
+            except Exception as e:
+                print(f"{Fore.YELLOW}WARNING: Invalid product at index {idx}: {e}{Style.RESET_ALL}")
+                
+        if not products_db:
+            raise ValueError("No valid products found in file")
+            
+        print(f"{Fore.GREEN}Loaded {len(products_db)} valid products{Style.RESET_ALL}")
+        
     except Exception as e:
-        print(f"{Fore.RED}ERROR: Failed to load products: {e}{Style.RESET_ALL}")
-        raise
+        print(f"{Fore.RED}ERROR: Product load failed: {e}{Style.RESET_ALL}")
+        products_db = {}  # Ensures app has empty state rather than crashing
+        raise  # Re-raise if you want startup to fail on product load
 
 
 # --- FastAPI App Initialization ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print(f"{Fore.MAGENTA}--- API Startup: Loading data ---{Style.RESET_ALL}")
+    """Handles application startup and shutdown with robust error handling"""
+    startup_success = False
+    print(f"{Fore.MAGENTA}=== API Startup: Loading Data ==={Style.RESET_ALL}")
+    
     try:
+        # Phase 1: Load critical data
         load_products_data()
-        load_cart_data()
+        
+        # Phase 2: Load secondary data (cart can start empty)
+        try:
+            load_cart_data()
+        except Exception as e:
+            print(f"{Fore.YELLOW}WARNING: Cart load failed - starting with empty cart: {e}{Style.RESET_ALL}")
+        
+        startup_success = True
         yield
+        
     except FileNotFoundError as e:
-        print(f"{Fore.RED}FATAL: Startup failed due to missing file: {e}{Style.RESET_ALL}")
-        raise RuntimeError("Application cannot start without products file.")
+        print(f"{Fore.RED}FATAL: Missing required file: {e}{Style.RESET_ALL}")
+        raise RuntimeError(f"Critical startup failure: {e}")
+    except json.JSONDecodeError as e:
+        print(f"{Fore.RED}FATAL: Corrupted data file: {e}{Style.RESET_ALL}")
+        raise RuntimeError("Invalid data format in storage files")
+    except Exception as e:
+        print(f"{Fore.RED}FATAL: Unexpected startup error: {e}{Style.RESET_ALL}")
+        raise RuntimeError("Application failed to initialize")
+    
     finally:
-        print(f"{Fore.MAGENTA}--- API Shutdown ---{Style.RESET_ALL}")
+        shutdown_msg = "Graceful shutdown" if startup_success else "Abnormal shutdown"
+        color = Fore.GREEN if startup_success else Fore.RED
+        print(f"{color}=== API Shutdown: {shutdown_msg} ==={Style.RESET_ALL}")
 
 app = FastAPI(
     title="Mini Shopping API",
@@ -146,8 +182,9 @@ async def add_to_cart_endpoint(
     response_model=Dict[str, Any]
 )
 async def view_cart():
-    print(f"{Fore.BLUE}INFO: Cart contents retrieved. Current items: {len(cart_db)}{Style.RESET_ALL}")
-    return cart_db
+    cart = get_cart()
+    print(f"{Fore.BLUE}INFO: Cart contents retrieved. Current items: {len(cart)}{Style.RESET_ALL}")
+    return cart
 
 @app.get(
     "/cart/items/",
@@ -156,8 +193,9 @@ async def view_cart():
     response_model=List[Dict[str, Any]]
 )
 async def view_cart_as_list():
-    print(f"{Fore.BLUE}INFO: Cart contents retrieved as a list. Current items: {len(cart_db)}{Style.RESET_ALL}")
-    return list(cart_db.values())
+    cart = get_cart()
+    print(f"{Fore.BLUE}INFO: Cart contents retrieved as a list. Current items: {len(cart)}{Style.RESET_ALL}")
+    return list(cart.values())
 
 @app.get(
     "/cart/checkout",
@@ -166,7 +204,8 @@ async def view_cart_as_list():
     description="Calculates the total cost of all items in the cart and then clears the cart."
 )
 async def checkout():
-    if not cart_db:
+    cart = get_cart()
+    if not cart:
         print(f"{Fore.YELLOW}WARNING: Checkout attempted on an empty cart.{Style.RESET_ALL}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
