@@ -15,5 +15,8 @@ products.json
 cart.json
 applications.json
 
+# Local data folders
+notes/
+
 # Logs
 *.log
