@@ -21,16 +21,16 @@ next_id = 0
 # --- Pydantic Models ---
 class ApplicationStatus(str, enum.Enum):
     """Enumeration for valid job application statuses."""
-    pending = "Pending"
-    interviewing = "Interviewing"
-    rejected = "Rejected"
-    accepted = "Accepted"
+    # Changed from Pending, Interviewing, etc. to just Open and Closed
+    open = "Open"
+    closed = "Closed"
 
 class JobApplicationBase(BaseModel):
     """Base model for creating a new job application."""
     company: str = Field(..., min_length=1, description="Name of the company")
     title: str = Field(..., min_length=1, description="Job title")
-    status: ApplicationStatus = Field(ApplicationStatus.pending, description="Status of the application")
+    # Updated the default value to "Open"
+    status: ApplicationStatus = Field(ApplicationStatus.open, description="Status of the application")
 
 class JobApplication(JobApplicationBase):
     """Full model for a job application, including generated fields."""
