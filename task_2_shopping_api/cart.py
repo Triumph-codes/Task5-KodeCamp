@@ -89,6 +89,11 @@ def checkout_cart(products_db: Dict[int, Any]) -> tuple[float, List[Dict[str, An
     
     return round(total, 2), detailed_items
 
+def get_cart() -> Dict[str, Dict[str, Any]]:
+    """Returns the current state of the in-memory cart."""
+    global cart_db
+    return cart_db
+
 def clear_cart() -> None:
     """Clears cart both in memory and on disk"""
     global cart_db

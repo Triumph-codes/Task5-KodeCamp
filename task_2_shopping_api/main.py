@@ -66,11 +66,9 @@ def load_products_data():
         with open(PRODUCTS_FILE) as f:
             raw_data = json.load(f)
             
-        # Validate basic structure
         if not isinstance(raw_data, list):
             raise ValueError("Products data must be a list")
             
-        # Process and validate each product
         products_db = {}
         for idx, item in enumerate(raw_data):
             try:
@@ -86,9 +84,8 @@ def load_products_data():
         
     except Exception as e:
         print(f"{Fore.RED}ERROR: Product load failed: {e}{Style.RESET_ALL}")
-        products_db = {}  # Ensures app has empty state rather than crashing
-        raise  # Re-raise if you want startup to fail on product load
-
+        products_db = {}
+        raise
 
 # --- FastAPI App Initialization ---
 @asynccontextmanager
@@ -157,9 +154,13 @@ async def add_to_cart_endpoint(
 ):
     try:
         cart_data = add_to_cart(product_id, quantity, products_db)
+        
+        # We need to get the cart again to get the accurate item count
+        current_cart = get_cart() 
+        
         action = "updated" if cart_data['quantity'] > quantity else "added"
         print(f"{Fore.GREEN}INFO: {action.capitalize()} {quantity} of product ID {product_id} to cart. "
-              f"Now has {cart_data['quantity']} items. Current cart has {len(cart_db)} products.{Style.RESET_ALL}")
+              f"Now has {cart_data['quantity']} items. Current cart has {len(current_cart)} products.{Style.RESET_ALL}")
 
         return CartOperationResponse(
             message=f"Product {product_id} {action} to cart",
@@ -226,5 +227,6 @@ async def checkout():
 )
 async def empty_cart():
     clear_cart()
-    print(f"{Fore.GREEN}INFO: Cart has been emptied.{Style.RESET_ALL}")
+    current_cart = get_cart()
+    print(f"{Fore.GREEN}INFO: Cart has been emptied. Current items: {len(current_cart)}{Style.RESET_ALL}")
     return None
