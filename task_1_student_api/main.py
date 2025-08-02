@@ -14,7 +14,6 @@ STUDENTS_FILE = "students.json"
 # --- Pydantic Models ---
 class SubjectScores(RootModel):
     root: Dict[str, float] 
-
     @model_validator(mode='after')
     def validate_scores(self):
         for subject, score in self.root.items():
